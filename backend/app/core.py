@@ -16,6 +16,7 @@ class S:
     RATE = int(os.getenv("RATE_PER_MIN", "20"))
 
 S.DATA.mkdir(parents=True, exist_ok=True)
+S.AGENT_MODE = os.getenv("AGENT_MODE", "graph")   # graph (LangGraph) or simple
 
 # ---------- users (SQLite) ----------
 _db = sqlite3.connect(S.DATA / "users.db", check_same_thread=False)
@@ -172,12 +173,34 @@ VOICES = {"en": "en-IN-PrabhatNeural", "te": "te-IN-MohanNeural", "hi": "hi-IN-M
 
 async def tts(text, lang="en"):
     lang = lang[:2] if lang[:2] in VOICES else "en"
-    if os.getenv("VOICE_URL"):   # cloned-voice service: POST {text, language} -> audio bytes
-        async with httpx.AsyncClient(timeout=60) as c:
-            r = await c.post(os.environ["VOICE_URL"], json={"text": text, "language": lang}); r.raise_for_status()
-            return r.content, r.headers.get("content-type", "audio/wav")
+    if os.getenv("VOICE_URL") and lang in ("en", "hi"):   # cloned-voice service (XTTS); falls back to edge-tts on any failure
+        try:
+            async with httpx.AsyncClient(timeout=90) as c:
+                r = await c.post(os.environ["VOICE_URL"], json={"text": text, "language": lang}); r.raise_for_status()
+                return r.content, r.headers.get("content-type", "audio/wav")
+        except Exception:
+            pass
     import edge_tts
     buf = b""
     async for ch in edge_tts.Communicate(text, VOICES[lang]).stream():
         if ch["type"] == "audio": buf += ch["data"]
     return buf, "audio/mpeg"
+
+# ---------- plain completion, grounded answer, generic limiter ----------
+async def complete(msgs, temp=.4, max_tokens=260):
+    async with httpx.AsyncClient(timeout=40) as c:
+        r = await c.post(f"{S.LLM_URL}/chat/completions", headers={"Authorization": f"Bearer {S.LLM_KEY}"},
+                         json={"model": S.LLM_MODEL, "messages": msgs, "temperature": temp, "max_tokens": max_tokens})
+        r.raise_for_status(); return (r.json()["choices"][0]["message"].get("content") or "").strip()
+
+async def answer_from_context(question, ctx, mood, history):
+    if not S.LLM_KEY or not ctx: return ctx[0]["text"] if ctx else "I don't have that in my knowledge base yet."
+    block = "\n".join(f"- {c['text']}" for c in ctx)
+    return await complete([{"role": "system", "content": SYSTEM.format(mood=mood)}, *history[-6:],
+                           {"role": "user", "content": f"<CONTEXT>\n{block}\n</CONTEXT>\n\nQuestion: {question}"}])
+
+_b = collections.defaultdict(list)
+def allow(user, bucket, limit, window=60):
+    t = time.time(); k = (user, bucket); _b[k] = [x for x in _b[k] if t - x < window]
+    if len(_b[k]) >= limit: return False
+    _b[k].append(t); return True

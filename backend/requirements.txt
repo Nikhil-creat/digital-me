@@ -8,3 +8,7 @@ chromadb==0.5.*
 fastembed==0.3.*
 edge-tts==6.*
 tzdata
+langgraph==0.2.*
+numpy<2
+opencv-python-headless==4.10.*
+onnxruntime==1.18.*

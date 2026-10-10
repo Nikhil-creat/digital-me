@@ -1,11 +1,11 @@
-import time, json, asyncio
+import os, time, json, asyncio, hashlib
 from fastapi import FastAPI, Depends, HTTPException, Request, Response, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel, EmailStr, Field
 import jwt
-from . import core as c
+from . import core as c, graph
 
 app = FastAPI(title="Digital Me API", version="2.0")
 app.add_middleware(CORSMiddleware, allow_origins=c.S.ORIGINS, allow_methods=["*"], allow_headers=["*"])
@@ -27,6 +27,7 @@ class Cred(BaseModel):
 class Msg(BaseModel):
     text: str
     history: list[dict] = []
+    mood_hint: str = ""
 
 class Chunk(BaseModel):
     id: str
@@ -48,7 +49,7 @@ def owner(u=Depends(who)):
     if u["role"] != "owner": raise HTTPException(403, "Owner only")
     return u
 
-async def chat_core(text, history, u):
+async def chat_core(text, history, u, hint=""):
     t0 = time.time(); trace = []
     history = [h for h in history if h.get("role") in ("user", "assistant") and isinstance(h.get("content"), str)][-6:]
     bad = c.check_input(u["sub"], text)
@@ -56,9 +57,13 @@ async def chat_core(text, history, u):
         c.audit(u["sub"], "blocked", bad); c.log_chat(u["sub"], text, bad, "neutral", True)
         return {"answer": bad, "emotion": "neutral", "blocked": True, "trace": ["guardrail: blocked"], "sources": [], "ms": 0}
     trace.append("guardrail: input clean")
-    mood = c.emotion(text); trace.append(f"emotion: {mood}")
+    mood = c.emotion(text)
+    if mood == "neutral" and hint in ("joy", "sad", "angry", "surprise"): mood = hint; trace.append(f"emotion: {mood} (from camera CNN)")
+    else: trace.append(f"emotion: {mood}")
     ctx = c.retrieve(text, u["role"]); trace.append(f"vector search: {len(ctx)} chunks, top score {ctx[0]['score'] if ctx else 0}, role={u['role']}")
-    try: ans = await c.agent(text, ctx, mood, history, trace)
+    try:
+        use_graph = graph.AVAILABLE and c.S.AGENT_MODE == "graph"
+        ans = await (graph.run(text, ctx, mood, history, trace) if use_graph else c.agent(text, ctx, mood, history, trace))
     except Exception as e:
         ans = ctx[0]["text"] if ctx else "The language model is unavailable right now."; trace.append(f"llm fallback: {type(e).__name__}")
     ans = c.redact(ans, u["role"]); trace.append("output guard: PII redaction on" if u["role"] != "owner" else "output guard: owner, no redaction")
@@ -66,7 +71,7 @@ async def chat_core(text, history, u):
     return {"answer": ans, "emotion": mood, "blocked": False, "trace": trace, "sources": [x["tag"] for x in ctx], "ms": int((time.time() - t0) * 1000)}
 
 @app.get("/health")
-def health(): return {"ok": True, "llm": bool(c.S.LLM_KEY), "chunks": c._col.count(), "voice": "custom" if __import__("os").getenv("VOICE_URL") else "edge-tts"}
+def health(): return {"ok": True, "llm": bool(c.S.LLM_KEY), "chunks": c._col.count(), "voice": "xtts" if os.getenv("VOICE_URL") else "edge-tts", "hd_avatar": bool(os.getenv("LIPSYNC_URL")), "agents": "langgraph" if graph.AVAILABLE and c.S.AGENT_MODE == "graph" else "simple"}
 
 @app.post("/auth/register")
 def register(b: Cred):
@@ -84,11 +89,11 @@ def login(b: Cred):
 def me(u=Depends(who)): return {"email": u["sub"], "role": u["role"]}
 
 @app.post("/chat")
-async def chat(m: Msg, u=Depends(who)): return await chat_core(m.text, m.history, u)
+async def chat(m: Msg, u=Depends(who)): return await chat_core(m.text, m.history, u, m.mood_hint)
 
 @app.post("/chat/stream")
 async def chat_stream(m: Msg, u=Depends(who)):
-    r = await chat_core(m.text, m.history, u)
+    r = await chat_core(m.text, m.history, u, m.mood_hint)
     async def gen():
         yield f"data: {json.dumps({'meta': {k: r[k] for k in ('emotion', 'blocked', 'trace', 'sources')}})}\n\n"
         words = r["answer"].split(" ")
@@ -106,7 +111,7 @@ async def ws(sock: WebSocket, token: str = ""):
     try:
         while True:
             d = await sock.receive_json(); q = str(d.get("text", ""))[:800]
-            r = await chat_core(q, hist, u); hist += [{"role": "user", "content": q}, {"role": "assistant", "content": r["answer"]}]; hist = hist[-8:]
+            r = await chat_core(q, hist, u, str(d.get('mood_hint', ''))); hist += [{"role": "user", "content": q}, {"role": "assistant", "content": r["answer"]}]; hist = hist[-8:]
             await sock.send_json(r)
     except WebSocketDisconnect: pass
 
@@ -135,3 +140,30 @@ def stats(u=Depends(owner)): return c.stats()
 
 @app.get("/admin/messages")
 def msgs(u=Depends(owner)): return c.messages()
+
+@app.post("/emotion/frame")
+async def emotion_frame(request: Request, u=Depends(who)):
+    if not c.allow(u["sub"], "emo", 40): raise HTTPException(429, "Too many frames")
+    data = await request.body()
+    if not data or len(data) > 400_000: raise HTTPException(413, "Send one JPEG under 400 KB")
+    from . import emotion
+    try: return await asyncio.to_thread(emotion.classify, data)      # in memory only, never stored
+    except ValueError: raise HTTPException(422, "Not a valid image")
+    except Exception: raise HTTPException(503, "Emotion model unavailable")
+
+@app.get("/avatar/video")
+async def avatar_video(text: str, lang: str = "en", u=Depends(who)):
+    url = os.getenv("LIPSYNC_URL")
+    if not url: raise HTTPException(501, "Lip-sync service not configured")
+    text = text[:300]
+    if c.check_input(u["sub"], text) or not c.allow(u["sub"], "hd", 6): raise HTTPException(429, "Slow down")
+    f = c.S.DATA / "video" / (hashlib.sha256(f"{lang}|{text}".encode()).hexdigest()[:24] + ".mp4"); f.parent.mkdir(exist_ok=True)
+    if not f.exists():
+        try:
+            audio, mime = await c.tts(text, lang)
+            import httpx
+            async with httpx.AsyncClient(timeout=300) as cl:
+                r = await cl.post(url, files={"audio": ("a", audio, mime)}); r.raise_for_status()
+            f.write_bytes(r.content)
+        except Exception: raise HTTPException(503, "Lip-sync service unavailable")
+    return Response(f.read_bytes(), media_type="video/mp4")

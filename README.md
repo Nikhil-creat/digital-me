@@ -1,4 +1,6 @@
-# Digital Me — AI twin of Nikhil Chary Sriramoju (v2)
+# Digital Me — AI twin of Nikhil Chary Sriramoju (v3)
+
+**Start here: `DEPLOY_GITHUB_PAGES.md`.**
 
 - `docs/` — futuristic PWA frontend for GitHub Pages. Works offline in demo mode; goes live when pointed at the API.
 - `backend/` — FastAPI, ChromaDB + fastembed (bge-small), OpenAI-compatible LLM with tool calling, JWT + roles, SSE + WebSocket, server TTS, Docker + Caddy HTTPS, pytest.
@@ -28,5 +30,8 @@ Register with the email in `OWNER_EMAIL` → you are the owner. Open the Owner d
 ## Cloned voice
 Run any XTTS/Piper server that accepts `POST {text, language}` and returns audio, then set `VOICE_URL`. Without it, `/tts` uses Microsoft Edge neural voices (edge-tts, needs internet).
 
-## Not included yet
-Webcam CNN emotion detection and photoreal lip sync (Wav2Lip/SadTalker) — the jaw animation is a 2D approximation. LangGraph multi-agent graphs.
+## New in v3
+LangGraph multi-agent graph (router, knowledge, tool and contact agents, fact-check critic loop) · webcam emotion CNN (FER+ ONNX, `/emotion/frame`) · cloned voice (`services/voice`, XTTS v2) · photoreal lip sync (`services/lipsync`, Wav2Lip) — see `services/README.md`.
+
+## Limits
+The camera CNN is a small FER+ model: good for broad moods, not clinical. Wav2Lip and XTTS licenses are non-commercial. The Docker builds for the two optional services are untested and may need version tweaks.

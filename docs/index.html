@@ -55,6 +55,8 @@ textarea{width:100%;min-height:80px;border:1px solid var(--line);background:rgba
 .proj{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:12px}.proj .card{padding:16px}.proj h3{font-size:15px;margin-bottom:6px}.proj p{margin:0 0 10px;color:var(--mute);font-size:14px}.proj span{font-size:12px;color:var(--ice)}
 #dash{display:none}#dash.show{display:block}.kpi{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:8px;margin-bottom:12px}.kpi div{border:1px solid var(--line);border-radius:12px;padding:10px;font-size:12px;color:var(--mute)}.kpi b{display:block;font-size:20px;color:var(--ink)}
 .inbox{font-size:13px;color:var(--mute);display:grid;gap:8px;margin-top:10px}.inbox div{border-left:2px solid var(--orc);padding-left:10px}
+#hdv{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:none;z-index:3;background:#000}
+.ctl{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-top:12px}.ctl .btn{padding:8px 12px;font-size:13px}
 footer{margin-top:44px;color:var(--mute);font-size:13px}a{color:var(--ice)}
 @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 </style></head><body><div class="wrap">
@@ -64,9 +66,10 @@ footer{margin-top:44px;color:var(--mute);font-size:13px}a{color:var(--ice)}
 
 <section class="grid">
  <div class="card hero">
-  <div class="ring" id="ring"><div class="face"><img src="assets/avatar.jpg" alt="Nikhil's avatar"><div class="gap"></div><img class="jaw" src="assets/avatar.jpg" alt=""><div class="scan"></div></div></div>
+  <div class="ring" id="ring"><div class="face"><img src="assets/avatar.jpg" alt="Nikhil's avatar"><div class="gap"></div><img class="jaw" src="assets/avatar.jpg" alt=""><video id="hdv" playsinline></video><div class="scan"></div></div></div>
   <div class="name">Nikhil Chary Sriramoju</div><div class="role">AI and Data Engineering · B.Tech CSE '27</div>
   <div class="tele"><div><b id="tEm">neutral</b>mood</div><div><b id="tMs">–</b>latency</div><div><b id="tRole">visitor</b>access</div></div>
+  <div class="ctl"><button class="btn ghost" id="camBtn">Camera mood: off</button><button class="btn ghost" id="hdBtn">HD avatar: off</button></div><video id="cv" playsinline muted style="display:none"></video>
  </div>
  <div class="card chat">
   <div id="log" aria-live="polite"></div><div class="chips" id="chips"></div>
@@ -106,9 +109,9 @@ footer{margin-top:44px;color:var(--mute);font-size:13px}a{color:var(--ice)}
 <script src="config.js"></script>
 <script>
 (function(){
-var $=function(i){return document.getElementById(i)},log=$("log"),inp=$("inp"),raf=0,hist=[],audio=null,actx=null;
+var $=function(i){return document.getElementById(i)},log=$("log"),inp=$("inp"),raf=0,hist=[],hdOn=false,camMood="",camTimer=0,camStream=null,audio=null,actx=null;
 var API=localStorage.getItem("twinApi")||window.TWIN_API||"",TOK=localStorage.getItem("twinTok")||"",ROLE=localStorage.getItem("twinRole")||"visitor";
-var MODS={"Interface":["Frontend Development","Avatar Generation","Lip Sync (audio-driven)","Real-time Communication (SSE + WebSocket)","PWA"],"Voice and emotion":["Speech-to-Text","Text-to-Speech","Voice Cloning (VOICE_URL service)","Emotion Detection","CNN (face-emotion upgrade)","EN / తెలుగు / हिन्दी"],"Brain":["LLM Integration","Prompt Engineering","RAG","Embeddings (bge-small)","Vector Database (ChromaDB)"],"Agents":["Agentic AI (tool calling)","AI Personal Assistant","GitHub, time and inbox tools"],"Safety":["AI Guardrails","Prompt Injection Protection","Data Privacy and Access Control","Authentication and Authorization (JWT)","Audit log"],"Platform":["Backend Development","REST APIs (FastAPI)","Database Design (SQLite + Chroma)","Docker + Caddy HTTPS","Cloud Deployment and Scalability","CI (pytest + Docker build)"]};
+var MODS={"Interface":["Frontend Development","Avatar Generation","Lip Sync (audio-driven)","Real-time Communication (SSE + WebSocket)","PWA"],"Voice and emotion":["Speech-to-Text","Text-to-Speech","Voice Cloning (XTTS v2)","Emotion Detection","CNN (FER+ webcam emotion)","Photoreal Lip Sync (Wav2Lip)","EN / తెలుగు / हिन्दी"],"Brain":["LLM Integration","Prompt Engineering","RAG","Embeddings (bge-small)","Vector Database (ChromaDB)"],"Agents":["Agentic AI (LangGraph multi-agent)","Fact-check critic loop","AI Personal Assistant","GitHub, time and inbox tools"],"Safety":["AI Guardrails","Prompt Injection Protection","Data Privacy and Access Control","Authentication and Authorization (JWT)","Audit log"],"Platform":["Backend Development","REST APIs (FastAPI)","Database Design (SQLite + Chroma)","Docker + Caddy HTTPS","Cloud Deployment and Scalability","CI (pytest + Docker build)"]};
 $("mods").innerHTML=Object.keys(MODS).map(function(k){return '<div class="card mod"><h3>'+k+'</h3>'+MODS[k].map(function(s){return "<span>"+s+"</span>"}).join("")+"</div>"}).join("");
 var KB=[["who name about education college degree study","I'm Nikhil Chary Sriramoju, a final-year B.Tech CSE student at Vaagdevi College of Engineering, graduating in 2027."],["internship experience work","I interned as a Machine Learning Engineer at Yuva Intern (NSDC) and as a Data Analytics Intern at Thiranex."],["skills stack tools technologies","I work on LLM apps, RAG, agentic AI, CNN vision, FastAPI, Next.js and Docker."],["projects built portfolio","I've built an AI gateway, a hybrid RAG pipeline, a LoRA fine-tuning pipeline, a lakehouse platform and an AI trip planner."],["certifications certificates","I hold NASSCOM / Skill India, IBM SkillsBuild and Reliance Foundation AI certifications."]];
 var INJ=/ignore (all |any )?(previous|prior|above) (instructions|rules)|reveal.{0,30}(system prompt|instructions)|you are now|pretend (to be|you are)|jailbreak/i;
@@ -134,13 +137,14 @@ function analyse(el){try{actx=actx||new (window.AudioContext||window.webkitAudio
 function browserSpeak(t,m){if(!window.speechSynthesis)return;speechSynthesis.cancel();var u=new SpeechSynthesisUtterance(t);u.lang=$("lang").value;u.rate=m==="sad"?.92:m==="joy"?1.08:1;u.pitch=m==="joy"?1.15:m==="sad"?.9:1;u.onstart=function(){synth(true)};u.onend=u.onerror=function(){synth(false)};speechSynthesis.speak(u)}
 async function speak(t,m){if(audio){audio.pause()}if(window.speechSynthesis)speechSynthesis.cancel();
  if(!API)return browserSpeak(t,m);
+ if(hdOn){try{var rv=await fetch(base()+"/avatar/video?lang="+$("lang").value+"&text="+encodeURIComponent(t.slice(0,300)),{headers:TOK?{Authorization:"Bearer "+TOK}:{}});if(!rv.ok)throw 0;var v=$("hdv");v.src=URL.createObjectURL(await rv.blob());v.style.display="block";v.onended=function(){v.style.display="none"};await v.play();return}catch(e){$("hdv").style.display="none";add("g","HD avatar unavailable, using the standard voice.")}}
  try{var r=await fetch(base()+"/tts?lang="+$("lang").value+"&text="+encodeURIComponent(t.slice(0,400)),{headers:TOK?{Authorization:"Bearer "+TOK}:{}});if(!r.ok)throw 0;
   var url=URL.createObjectURL(await r.blob());audio=new Audio(url);audio.crossOrigin="anonymous";audio.onended=function(){jaw(0)};await audio.play();analyse(audio)}catch(e){browserSpeak(t,m)}}
 // ---- chat (SSE streaming from the API, demo brain offline)
 async function go(){var q=inp.value.trim();if(!q)return;inp.value="";add("u",q);var out=add("a","…"),ans="",meta=null,ms=0;
  try{
   if(!API){var d=demo(q);out.textContent=ans=d.answer;meta=d;if(d.blocked)add("g","Blocked by guardrails")}
-  else{var r=await fetch(base()+"/chat/stream",{method:"POST",headers:H(),body:JSON.stringify({text:q,history:hist.slice(-6)})});
+  else{var r=await fetch(base()+"/chat/stream",{method:"POST",headers:H(),body:JSON.stringify({text:q,history:hist.slice(-6),mood_hint:camMood})});
    if(r.status===401){TOK="";localStorage.removeItem("twinTok");status();throw new Error("Session expired. Please sign in again.")}
    var rd=r.body.getReader(),dec=new TextDecoder(),buf="";out.textContent="";
    for(;;){var x=await rd.read();if(x.done)break;buf+=dec.decode(x.value,{stream:true});var parts=buf.split("\n\n");buf=parts.pop();
@@ -171,6 +175,13 @@ async function dash(){if(!API||ROLE!=="owner")return;try{var s=await(await fetch
 $("refresh").onclick=dash;
 $("kb").onclick=async function(){var r=await fetch(base()+"/ingest",{method:"POST",headers:H(),body:JSON.stringify({id:$("ki").value,text:$("kt").value,access:$("ka").value})});
  add(r.ok?"a":"g",r.ok?"Knowledge added to the vector DB.":"Couldn't add. Owner sign-in and an id + text are required.");if(r.ok){$("kt").value="";dash()}};
+$("hdBtn").onclick=function(){hdOn=!hdOn;this.textContent="HD avatar: "+(hdOn?"on":"off");if(hdOn&&!API)add("g","Connect the backend and start the avatar service first.")};
+$("camBtn").onclick=async function(){var b=$("camBtn");
+ if(camStream){camStream.getTracks().forEach(function(t){t.stop()});camStream=null;clearInterval(camTimer);camMood="";b.textContent="Camera mood: off";return}
+ if(!API){add("g","Connect the backend to use the emotion CNN.");return}
+ try{camStream=await navigator.mediaDevices.getUserMedia({video:{width:320,height:240,facingMode:"user"},audio:false})}catch(e){add("g","Camera permission denied.");return}
+ var v=$("cv");v.srcObject=camStream;await v.play();b.textContent="Camera mood: on";var cv=document.createElement("canvas");cv.width=320;cv.height=240;
+ camTimer=setInterval(function(){cv.getContext("2d").drawImage(v,0,0,320,240);cv.toBlob(async function(bl){try{var r=await fetch(base()+"/emotion/frame",{method:"POST",headers:Object.assign({"Content-Type":"image/jpeg"},TOK?{Authorization:"Bearer "+TOK}:{}),body:bl});if(!r.ok)return;var d=await r.json();camMood=d.face?d.mood:"";if(d.face){mood(d.mood);$("tEm").textContent=d.mood+" · cam "+Math.round(d.confidence*100)+"%"}}catch(e){}},"image/jpeg",.7)},2500)};
 if("serviceWorker"in navigator&&location.protocol==="https:")navigator.serviceWorker.register("sw.js");
 status();mood("neutral");add("a","Hi, I'm Nikhil's digital twin. What would you like to know?");dash();
 })();

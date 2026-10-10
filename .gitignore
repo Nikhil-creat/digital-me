@@ -1,3 +1,6 @@
 .env
 __pycache__/
 *.db
+.pytest_cache/
+services/voice/sample/*.wav
+services/lipsync/checkpoints/*.pth

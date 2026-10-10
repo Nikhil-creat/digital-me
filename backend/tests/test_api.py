@@ -25,3 +25,16 @@ def test_contact_and_pii_redaction():
         assert c.post("/contact", json={"name": "A", "contact": "a@b.co", "message": "Hello Nikhil"}).json()["ok"]
         _, ho = hdr(c, "owner2@example.com")
         assert c.get("/health").json()["ok"]
+
+def test_graph_routes_without_llm():
+    import pytest, asyncio
+    pytest.importorskip("langgraph")
+    from app import graph
+    t = []
+    out = asyncio.run(graph.run("Hello, who are you?", [{"text": "I'm Nikhil.", "score": .9, "tag": "about"}], "neutral", [], t))
+    assert out == "I'm Nikhil." and any("router: knowledge" in x for x in t)
+    assert asyncio.run(graph.run("I want to hire him", [], "neutral", [], [])).startswith("I can pass a message")
+
+def test_emotion_requires_valid_image():
+    with TestClient(app) as c:
+        assert c.post("/emotion/frame", content=b"").status_code == 413

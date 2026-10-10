@@ -12,6 +12,18 @@ services:
     volumes: ["./Caddyfile:/etc/caddy/Caddyfile:ro", "caddy_data:/data"]
     depends_on: [api]
     restart: unless-stopped
+  voice:                       # optional: cloned voice (XTTS v2). Run with: docker compose --profile voice up -d
+    profiles: ["voice"]
+    build: ../services/voice
+    environment: { COQUI_TOS_AGREED: "${COQUI_TOS_AGREED:-}" }
+    volumes: ["../services/voice/sample:/app/sample:ro", "xtts_models:/root/.local/share/tts"]
+    expose: ["8020"]
+  lipsync:                     # optional: photoreal lip-sync video (Wav2Lip). Run with: --profile avatar
+    profiles: ["avatar"]
+    build: ../services/lipsync
+    volumes: ["../services/lipsync/assets:/app/assets:ro", "../services/lipsync/checkpoints:/app/Wav2Lip/checkpoints"]
+    expose: ["8030"]
 volumes:
+  xtts_models:
   twin_data:
   caddy_data:
