@@ -1,0 +1,9 @@
+[
+{"text":"I'm Nikhil Chary Sriramoju, a final-year B.Tech Computer Science and Engineering student at Vaagdevi College of Engineering (2023-2027), based in Telangana, India.","tag":"about"},
+{"text":"I interned as a Machine Learning Engineer at Yuva Intern (NSDC) in Aug-Sep 2026 and as a Data Analytics Intern at Thiranex in Jul-Aug 2026.","tag":"experience"},
+{"text":"My certifications: NASSCOM / Skill India Digital Hub (AI-Data Engineering and Cloud Infrastructure Analyst), IBM SkillsBuild (AI Fundamentals), Reliance Foundation (AI/ML Engineer Foundation).","tag":"certifications"},
+{"text":"My core skills are LLM applications, RAG, agentic AI with LangGraph, CNN vision, embeddings and vector databases, FastAPI, Next.js, Docker and cloud deployment.","tag":"skills"},
+{"text":"Projects I've built include an AI gateway with semantic caching, a hybrid-search RAG pipeline, a LoRA fine-tuning pipeline, a lakehouse analytics platform (Spark, Delta Lake, dbt, Airflow), an AI trip planner PWA and a GST invoice copilot.","tag":"projects"},
+{"text":"You can find my code at github.com/Nikhil-creat.","tag":"links"},
+{"text":"OWNER NOTE: add private notes, availability and contact details here via POST /ingest with access=owner. They are only returned to the owner role.","access":"owner","tag":"private"}
+]
